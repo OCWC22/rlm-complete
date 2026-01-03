@@ -11,6 +11,15 @@
 </p>
 
 <p align="center">
+  <a href="https://github.com/alexzhang13/rlm/actions/workflows/style.yml">
+    <img src="https://github.com/alexzhang13/rlm/actions/workflows/style.yml/badge.svg" alt="Style" />
+  </a>
+  <a href="https://github.com/alexzhang13/rlm/actions/workflows/test.yml">
+    <img src="https://github.com/alexzhang13/rlm/actions/workflows/test.yml/badge.svg" alt="Test" />
+  </a>
+</p>
+
+<p align="center">
   <a href="https://arxiv.org/abs/2512.24601">
     <img src="media/paper_preview.png" alt="Paper Preview" width="300"/>
   </a>
@@ -21,6 +30,7 @@ Recursive Language Models (RLMs) are a task-agnostic inference paradigm for lang
 
 This repository provides an extensible inference engine for using RLMs around standard API-based and local LLMs. The initial experiments and idea were proposed in a [blogpost](https://alexzhang13.github.io/blog/2025/rlm/) in 2025, with expanded results in an [arXiv preprint](https://arxiv.org/abs/2512.24601).
 
+> Note: This repository contains inference code for RLMs with support for various sandbox environments. Open-source contributions are welcome. This repository is maintained by the authors of the paper from the MIT OASYS lab.
 
 <!-- ## Installation
 ```
