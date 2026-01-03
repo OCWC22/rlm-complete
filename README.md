@@ -25,6 +25,20 @@
   </a>
 </p>
 
+## Table of Contents
+
+- [Overview](#overview)
+- [Quick Setup](#quick-setup)
+- [REPL Environments](#repl-environments)
+  - [Local Environments](#local-environments)
+    - [Docker](#docker-img-srcgithubcomdockerpng-altdocker-height20-stylevertical-align-middle-requires-docker-installed)
+  - [Isolated Environments](#isolated-environments)
+    - [Modal Sandboxes](#modal-sandboxes-img-srcgithubcommodal-labspng-altmodal-height20-stylevertical-align-middle)
+    - [Prime Intellect Sandboxes](#prime-intellect-sandboxes-img-srcgithubcomprimeintellect-aipng-altprime-intellect-height20-stylevertical-align-middle)
+- [Model Providers](#model-providers)
+- [Relevant Reading](#relevant-reading)
+- [Optional Debugging: Visualizing RLM Trajectories](#optional-debugging-visualizing-rlm-trajectories)
+
 ## Overview
 Recursive Language Models (RLMs) are a task-agnostic inference paradigm for language models (LMs) to handle near-infinite length contexts by enabling the LM to *programmatically* examine, decompose, and recursively call itself over its input. RLMs replace the canonical `llm.completion(prompt, model)` call with a `rlm.completion(prompt, model)` call. RLMs offload the context as a variable in a REPL environment that the LM can interact with and launch sub-LM calls inside of.
 
