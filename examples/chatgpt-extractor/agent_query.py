@@ -18,8 +18,14 @@ from __future__ import annotations
 
 import argparse
 import os
+import sys
 from pathlib import Path
 from typing import Any
+
+# Add the repo root to path if needed (for running examples directly)
+_repo_root = Path(__file__).parent.parent.parent
+if str(_repo_root) not in sys.path:
+    sys.path.insert(0, str(_repo_root))
 
 from rlm.core.rlm import RLM
 
@@ -28,6 +34,7 @@ AGENT_SYSTEM_PROMPT = """You are an agent operating in a Python REPL environment
 
 Hard constraints:
 - Your usable context window is ~50,000 tokens. Assume anything large must stay on disk.
+
 - DO NOT load large JSON exports into memory. Query the SQLite DB instead.
 - Keep REPL prints small. Persist important information to disk (planning files).
 
@@ -292,4 +299,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-
