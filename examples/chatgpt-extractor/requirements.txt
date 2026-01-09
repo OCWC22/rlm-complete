@@ -1,0 +1,9 @@
+# ChatGPT Conversation Extractor Requirements
+
+# Core dependencies
+anthropic>=0.39.0
+openai>=1.0.0
+python-dotenv>=1.0.0
+
+# Optional for better output
+rich>=13.0.0
