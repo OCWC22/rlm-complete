@@ -1,76 +1,69 @@
 # ChatGPT Conversation Extractor
 
-Extract and synthesize ChatGPT conversations using the RLM (Recursive Language Model) framework.
+Extract and analyze ChatGPT history using **streaming ingestion + durable on-disk state**.
+
+This example is designed for the real constraint you described: the export can be **huge** (e.g. 1GB / “millions of tokens”), while the model you run is effectively limited to **~50k usable tokens**.
 
 ## Features
 
-- **Fetch ChatGPT conversations** from shared links (`chatgpt.com/share/...`)
-- **Verbatim extraction** of every message in the conversation
-- **Key points synthesis** - distill the conversation into actionable insights
-- **Topic identification** - automatically detect what was discussed
-- **Code snippet extraction** - pull out all code shared in the conversation
-- **Action item extraction** - identify todos and next steps
-- **Multiple model support** - use Haiku (fast/cheap), Sonnet, or Opus
+- **True streaming JSON parsing** for top-level export arrays (no `json.load()` memory bomb)
+- **SQLite index** (single file) for queryable retrieval across large history
+- **Token-bounded analysis**: only pull relevant slices into the LLM
+- **Externalized state**: planning/log files persisted to disk (task_plan/findings/progress)
 
 ## Installation
 
 ```bash
-cd examples/chatgpt-extractor
-pip install -r requirements.txt
+# From repo root (recommended)
+curl -LsSf https://astral.sh/uv/install.sh | sh
+uv sync
 
-# Set your API key
+# Set API key (example: Anthropic)
 export ANTHROPIC_API_KEY='sk-ant-...'
 ```
 
 ## Usage
 
-### Basic Usage
+### 1) Index the export (streaming)
 
 ```bash
-# Extract from a ChatGPT share link
-python chatgpt_extractor.py "https://chatgpt.com/share/abc123..."
-
-# Results saved to extractions/[timestamp]_[title]/
+# Build a durable SQLite index from a large export (no LLM calls)
+uv run python examples/chatgpt-extractor/extract.py /path/to/conversations.json \
+  --db extractions.db \
+  --verbatim-only
 ```
 
-### Model Selection
+### 2) Ask questions with an RLM agent (planning files + code execution)
 
 ```bash
-# Use Claude Haiku (fastest, cheapest - recommended for most use cases)
-python chatgpt_extractor.py "https://chatgpt.com/share/..." --model haiku
-
-# Use Claude Sonnet (balanced)
-python chatgpt_extractor.py "https://chatgpt.com/share/..." --model sonnet
-
-# Use Claude Opus (most capable, for complex analysis)
-python chatgpt_extractor.py "https://chatgpt.com/share/..." --model opus
+uv run python examples/chatgpt-extractor/agent_query.py \
+  --db extractions.db \
+  --workspace runs/query-001 \
+  --question "Find conversations about MCP + filesystem context engineering in Oct–Nov 2025 and summarize the key decisions." \
+  --start-date 2025-10-01 \
+  --end-date 2025-11-30 \
+  --topics "MCP,file system,context engineering" \
+  --limit 50
 ```
 
-### From Exported JSON
-
-If you've exported your ChatGPT data (Settings > Data Controls > Export):
+### 3) Optional: LLM extraction during ingestion
 
 ```bash
-python chatgpt_extractor.py conversations.json --json
-```
-
-### Verbatim Only (No AI Synthesis)
-
-Just extract the raw conversation without RLM processing:
-
-```bash
-python chatgpt_extractor.py "https://chatgpt.com/share/..." --verbatim-only
-```
-
-### Custom Options
-
-```bash
-python chatgpt_extractor.py "https://chatgpt.com/share/..." \
+uv run python examples/chatgpt-extractor/extract.py /path/to/conversations.json \
+  --db extractions.db \
   --model haiku \
-  --output my_extractions/ \
-  --max-iterations 15 \
-  --budget 1.00
+  --topics "MCP,RLM" \
+  --date 2025-11-12
 ```
+
+## Architecture
+
+See `examples/chatgpt-extractor/ARCHITECTURE.md` for the concrete “filesystem-as-memory + RLM compute + planning files” design.
+
+## Notes
+
+- **Share URL fetching**: `chatgpt.com/share/...` often blocks automated fetching. The reliable path is using the local export JSON.
+- **Legacy scripts**: `chatgpt_extractor.py` and `fs_extractor.py` exist for historical experiments and use a copied `examples/chatgpt-extractor/rlm/` implementation. The recommended path is `extract.py` + `agent_query.py`.
 
 ## Output Files
 
@@ -86,15 +79,11 @@ Each extraction creates a folder with:
 
 ## How It Works
 
-The extractor uses the RLM (Recursive Language Model) framework to handle conversations of any length:
+The system avoids context-window failure by keeping large data on disk:
 
-1. **Fetch**: Downloads the ChatGPT conversation from the share URL
-2. **Parse**: Extracts messages from the HTML/JSON structure
-3. **Chunk**: RLM intelligently chunks the conversation
-4. **Process**: Sub-LLMs analyze each chunk for key information
-5. **Synthesize**: Results are aggregated into a structured extraction
-
-This approach means even very long conversations can be fully processed, as the context is externalized and processed recursively.
+- The export is **streamed** into SQLite (index).
+- The RLM agent **executes code** to retrieve only relevant slices.
+- Planning files keep the agent aligned across long runs.
 
 ## Model Pricing
 

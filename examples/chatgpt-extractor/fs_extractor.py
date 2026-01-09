@@ -25,6 +25,12 @@ Usage:
     # Query the database
     python fs_extractor.py --query "action items"
     python fs_extractor.py --list-conversations
+
+NOTE (legacy):
+This script uses a copied `examples/chatgpt-extractor/rlm/` implementation.
+For the canonical (repo-root) RLM + persistent planning files workflow, prefer:
+- `examples/chatgpt-extractor/extract.py` (streaming indexer into SQLite)
+- `examples/chatgpt-extractor/agent_query.py` (RLM agent over the SQLite index)
 """
 
 import os
@@ -37,6 +43,8 @@ from datetime import datetime
 from pathlib import Path
 from typing import Optional, List, Dict, Generator
 from dataclasses import dataclass, field
+
+from streaming_json import iter_json_array_items
 
 # Add the rlm module to path
 sys.path.insert(0, str(Path(__file__).parent))
@@ -363,35 +371,61 @@ class FileScanner:
     def _parse_file(self, file_path: Path) -> Generator[Conversation, None, None]:
         """Parse a JSON file and yield conversations."""
         print(f"  Scanning: {file_path.name}")
+        # Stream top-level JSON arrays without loading full file (works for 1GB+ exports).
+        with open(file_path, "r", encoding="utf-8") as f:
+            first_non_ws = None
+            while True:
+                ch = f.read(1)
+                if ch == "":
+                    break
+                if ch.isspace():
+                    continue
+                first_non_ws = ch
+                break
 
-        with open(file_path, 'r', encoding='utf-8') as f:
-            data = json.load(f)
-
-        # Handle different formats
-        if isinstance(data, list):
-            # List of conversations (ChatGPT export format)
-            for conv_data in data:
+        if first_non_ws == "[":
+            for conv_data in iter_json_array_items(file_path):
+                if not isinstance(conv_data, dict):
+                    continue
                 conv = self._parse_conversation(conv_data, str(file_path))
                 if conv:
                     yield conv
-        elif isinstance(data, dict):
-            # Single conversation or wrapped format
-            if 'mapping' in data:
-                # Single conversation with mapping
+            return
+
+        # Non-array formats are expected to be smaller; use json.load.
+        with open(file_path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+
+        if isinstance(data, list):
+            for conv_data in data:
+                if not isinstance(conv_data, dict):
+                    continue
+                conv = self._parse_conversation(conv_data, str(file_path))
+                if conv:
+                    yield conv
+            return
+
+        if isinstance(data, dict):
+            if "mapping" in data:
                 conv = self._parse_conversation(data, str(file_path))
                 if conv:
                     yield conv
-            elif 'conversations' in data:
-                # Wrapped format
-                for conv_data in data['conversations']:
+                return
+            if "conversations" in data and isinstance(data["conversations"], list):
+                for conv_data in data["conversations"]:
+                    if not isinstance(conv_data, dict):
+                        continue
                     conv = self._parse_conversation(conv_data, str(file_path))
                     if conv:
                         yield conv
-            else:
-                # Try as single conversation
-                conv = self._parse_conversation(data, str(file_path))
-                if conv:
-                    yield conv
+                return
+
+            conv = self._parse_conversation(data, str(file_path))
+            if conv:
+                yield conv
+            return
+
+        raise ValueError(f"Unsupported JSON format in {file_path}")
 
     def _parse_conversation(self, data: dict, source_file: str) -> Optional[Conversation]:
         """Parse a single conversation from JSON data."""

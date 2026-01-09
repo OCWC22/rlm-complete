@@ -52,6 +52,8 @@ from pathlib import Path
 from typing import Optional, List, Dict, Any, Generator
 from dataclasses import dataclass, asdict
 
+from streaming_json import iter_json_array_items
+
 
 # ============================================================================
 # CONFIGURATION
@@ -541,7 +543,35 @@ def parse_chatgpt_export(file_path: str) -> Generator[dict, None, None]:
     Parse ChatGPT export JSON file.
     Yields conversations one at a time.
     """
-    with open(file_path, 'r', encoding='utf-8') as f:
+    path = Path(file_path)
+
+    # Stream top-level arrays (the common "ChatGPT export" shape) without loading the file.
+    with path.open("r", encoding="utf-8") as f:
+        first_non_ws = None
+        while True:
+            ch = f.read(1)
+            if ch == "":
+                break
+            if ch.isspace():
+                continue
+            first_non_ws = ch
+            break
+
+    if first_non_ws == "[":
+        for conv in iter_json_array_items(path):
+            if isinstance(conv, dict):
+                yield conv
+        return
+
+    # For non-array top-level formats, we fail fast for truly large files.
+    # (Streaming nested arrays inside objects requires a different parser strategy.)
+    if path.stat().st_size > 200 * 1024 * 1024:
+        raise ValueError(
+            "ChatGPT export appears to be a large non-array JSON document. "
+            "This extractor currently supports true streaming only for top-level JSON arrays."
+        )
+
+    with path.open("r", encoding="utf-8") as f:
         data = json.load(f)
 
     if isinstance(data, list):
@@ -878,6 +908,7 @@ def run_extraction(
     topics: Optional[List[str]] = None,
     verbatim_only: bool = False,
     output_dir: str = "output",
+    resume: bool = False,
 ):
     """
     Main extraction pipeline.
@@ -906,9 +937,9 @@ def run_extraction(
             print(f"  Falling back to verbatim-only mode")
             verbatim_only = True
 
-    # Get checkpoint for resume
-    last_processed = db.get_checkpoint()
-    skip_until_found = last_processed is not None
+    # Get checkpoint for resume (only when explicitly requested)
+    last_processed = db.get_checkpoint() if resume else None
+    skip_until_found = resume and last_processed is not None
 
     # Process conversations
     processed = 0
@@ -920,7 +951,7 @@ def run_extraction(
         title = conv.get('title', 'Untitled')
         conv_date = get_conversation_date(conv)
 
-        # Resume logic
+        # Resume logic (skip until we see the last processed id again)
         if skip_until_found:
             if conv_id == last_processed:
                 skip_until_found = False
@@ -1051,6 +1082,7 @@ Models: haiku, sonnet, gpt-4o-mini, gpt-4o, deepseek, ollama
     parser.add_argument("--topics", "-t", help="Comma-separated topics to filter")
     parser.add_argument("--output", "-o", default="output", help="Output directory")
     parser.add_argument("--verbatim-only", action="store_true", help="Skip LLM extraction")
+    parser.add_argument("--resume", action="store_true", help="Resume from last checkpoint in DB")
 
     # Query options
     parser.add_argument("--list", action="store_true", help="List conversations")
@@ -1110,6 +1142,7 @@ Models: haiku, sonnet, gpt-4o-mini, gpt-4o, deepseek, ollama
         topics=topics,
         verbatim_only=args.verbatim_only,
         output_dir=args.output,
+        resume=args.resume,
     )
 
 

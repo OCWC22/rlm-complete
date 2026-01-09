@@ -40,6 +40,8 @@ from typing import Optional, List, Dict, Generator, Any, Set
 from dataclasses import dataclass, field, asdict
 import time
 
+from streaming_json import iter_json_array_items
+
 # ============================================================================
 # CONFIGURATION
 # ============================================================================
@@ -354,38 +356,49 @@ class StreamingJSONParser:
         """
         self.state.log_progress("STREAM_START", "Beginning conversation extraction")
 
-        # For ChatGPT exports, the file is typically a JSON array
-        # We'll use a simple streaming approach
+        # ChatGPT exports are typically a top-level JSON array. Stream it.
+        with open(self.file_path, "r", encoding="utf-8") as f:
+            first_non_ws = None
+            while True:
+                ch = f.read(1)
+                if ch == "":
+                    break
+                if ch.isspace():
+                    continue
+                first_non_ws = ch
+                break
 
-        with open(self.file_path, 'r', encoding='utf-8') as f:
-            content = f.read()
-
-        # Parse as JSON (for files up to a few GB, modern systems can handle this)
-        # For truly massive files, we'd use ijson or similar
-        try:
-            data = json.loads(content)
-            self.state.log_progress("JSON_PARSED", f"Successfully parsed JSON")
-
-            if isinstance(data, list):
-                total = len(data)
-                self.state.log_progress("CONVERSATIONS_FOUND", f"Total: {total}")
-
-                for i, conv in enumerate(data):
-                    if i % 100 == 0:
-                        self.state.log_progress("PROGRESS", f"Processing {i}/{total}")
+        if first_non_ws == "[":
+            for i, conv in enumerate(iter_json_array_items(self.file_path)):
+                if i % 100 == 0 and i > 0:
+                    self.state.log_progress("PROGRESS", f"Processed {i} conversations (streaming)")
+                if isinstance(conv, dict):
                     yield conv
+            self.state.log_progress("STREAM_COMPLETE", "Finished streaming JSON array")
+            return
 
-            elif isinstance(data, dict):
-                # Single conversation or wrapped format
-                if 'mapping' in data:
-                    yield data
-                elif 'conversations' in data:
-                    for conv in data['conversations']:
+        # Fallback for non-array formats (expected to be small).
+        if self.file_size > 200 * 1024 * 1024:
+            raise ValueError(
+                "Large ChatGPT export is not a top-level JSON array. "
+                "This extractor supports streaming only for top-level arrays."
+            )
+
+        with open(self.file_path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        self.state.log_progress("JSON_PARSED", "Successfully parsed JSON (non-streaming)")
+
+        if isinstance(data, dict):
+            if "mapping" in data:
+                yield data
+                return
+            if "conversations" in data and isinstance(data["conversations"], list):
+                for conv in data["conversations"]:
+                    if isinstance(conv, dict):
                         yield conv
+                return
 
-        except json.JSONDecodeError as e:
-            self.state.log_error(f"JSON parse error: {e}")
-            raise
+        raise ValueError("Unsupported ChatGPT export format (expected list/array or mapping dict).")
 
     def get_progress(self) -> float:
         """Get current progress percentage"""

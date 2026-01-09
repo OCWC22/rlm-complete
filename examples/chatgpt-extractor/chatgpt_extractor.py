@@ -14,6 +14,12 @@ Usage:
     python chatgpt_extractor.py "https://chatgpt.com/share/..."
     python chatgpt_extractor.py "https://chatgpt.com/share/..." --model haiku
     python chatgpt_extractor.py "https://chatgpt.com/share/..." --output results/
+
+NOTE (legacy):
+This script uses a copied `examples/chatgpt-extractor/rlm/` implementation for historical reasons.
+For large exported JSON analysis + persistent planning files, prefer:
+- `examples/chatgpt-extractor/extract.py` (streaming indexer)
+- `examples/chatgpt-extractor/agent_query.py` (canonical RLM agent over the SQLite index)
 """
 
 import os
@@ -29,6 +35,9 @@ from dataclasses import dataclass, field, asdict
 from urllib.parse import urlparse
 import urllib.request
 import urllib.error
+
+# For large exported JSON files
+from streaming_json import iter_json_array_items
 
 # Add the rlm module to path
 sys.path.insert(0, str(Path(__file__).parent))
@@ -431,8 +440,32 @@ class ChatGPTFetcher:
         """Load a conversation from a JSON file (ChatGPT export format)."""
         print(f"\n Loading from JSON: {json_path}")
 
-        with open(json_path, 'r', encoding='utf-8') as f:
-            data = json.load(f)
+        path = Path(json_path)
+
+        # Streaming: if this is a large export (top-level array), only pull the first conversation.
+        with path.open("r", encoding="utf-8") as f:
+            first_non_ws = None
+            while True:
+                ch = f.read(1)
+                if ch == "":
+                    break
+                if ch.isspace():
+                    continue
+                first_non_ws = ch
+                break
+
+        if first_non_ws == "[":
+            first_item: dict | None = None
+            for item in iter_json_array_items(path):
+                if isinstance(item, dict):
+                    first_item = item
+                    break
+            if first_item is None:
+                raise ValueError("Empty conversation list")
+            data = first_item
+        else:
+            with path.open("r", encoding="utf-8") as f:
+                data = json.load(f)
 
         # Handle both single conversation and export format
         if isinstance(data, list):
